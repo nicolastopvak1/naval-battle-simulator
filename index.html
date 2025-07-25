@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ship Battle Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #4fc3f7 60%, #01579b 100%);
+            animation: watermove 8s linear infinite;
+        }
+        @keyframes watermove {
+            0% { background-position: 0 0; }
+            100% { background-position: 200px 100px; }
+        }
+        #map-wrapper {
+            position: absolute;
+            left: 0; top: 0;
+            width: 4000px; height: 3000px;
+            overflow: hidden;
+            transform-origin: 0 0;
+            z-index: 0;
+        }
+        .npc {
+            transition: opacity 0.5s;
+        }
+        .health-bar {
+            pointer-events: none;
+        }
+        .team-label {
+            position: absolute;
+            top: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 13px;
+            font-weight: bold;
+            padding: 1px 6px;
+            border-radius: 6px;
+            color: #fff;
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 1px 1px 2px #000, 0 0 2px #000;
+        }
+        .team-asian {
+            background: #1976d2;
+        }
+        .team-victory {
+            background: #c62828;
+        }
+        #placement-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.8);
+            padding: 10px;
+            border-radius: 8px;
+            z-index: 10;
+        }
+        #placement-panel select, #placement-panel button {
+            margin: 5px 0;
+        }
+        #zoom-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.8);
+            padding: 10px;
+            border-radius: 8px;
+            z-index: 10;
+        }
+        #npc-container {
+            position: absolute;
+            left: 0; top: 0; width: 4000px; height: 3000px;
+            z-index: 1;
+        }
+        .island {
+            position: absolute;
+            background: #e2c97f;
+            border-radius: 60% 40% 55% 65%/60% 55% 65% 50%;
+            box-shadow: 0 0 60px 10px #bfae6e;
+            border: 3px solid #bfae6e;
+            z-index: 2;
+            /* Randomize size and shape with CSS variables */
+            width: var(--w,220px);
+            height: var(--h,180px);
+            transform: rotate(var(--r,0deg));
+        }
+        .cannon {
+            position: absolute;
+            width: 36px;
+            height: 36px;
+            background: #444;
+            border-radius: 50%;
+            border: 3px solid #222;
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .cannon-barrel {
+            width: 18px;
+            height: 6px;
+            background: #222;
+            border-radius: 3px;
+            position: absolute;
+            left: 18px;
+            top: 15px;
+            transform-origin: left center;
+        }
+        .airport {
+            position: absolute;
+            width: 70px;
+            height: 70px;
+            background: #b0b0b0;
+            border-radius: 12px;
+            border: 3px solid #888;
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .airport-label {
+            color: #222;
+            font-size: 13px;
+            font-weight: bold;
+            text-align: center;
+            width: 100%;
+            pointer-events: none;
+        }
+        .placing-cursor {
+            cursor: crosshair !important;
+        }
+        .cannonball {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #222;
+            box-shadow: 0 0 8px #000;
+            z-index: 5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="map-wrapper">
+        <div id="npc-container"></div>
+    </div>
+    <div id="placement-panel">
+        <b>Place a Ship</b><br>
+        Team:
+        <select id="team-select">
+            <option value="asian">Asian</option>
+            <option value="victory">Victory</option>
+        </select><br>
+        Ship:
+        <select id="ship-select">
+            <option value="japanese-ship1.png">Japanese Ship</option>
+            <option value="chinese-schip.webp">Chinese Ship</option>
+            <option value="chinese-ship2.webp">Chinese Ship 2</option>
+            <option value="hms-victory.webp">HMS Victory</option>
+            <option value="victory2.jpg">Victory 2</option>
+            <option value="korean_ship1.png">Korean Ship</option>
+            <option value="flagship1.jpg">Flagship</option>
+            <option value="song-ship.webp">Song Ship</option>
+            <option value="victory3.jpg">victory 3</option>
+            <option value="galley.png">Galley</option>
+
+        </select><br>
+        <button id="pause-btn">Pause</button>
+        <button id="start-btn" style="display:none;">Start</button>
+        <br>
+        <b>Place:</b>
+        <select id="place-type">
+            <option value="ship">Ship</option>
+            <option value="cannon">Cannon</option>
+            <option value="airport">Airport</option>
+        </select>
+        <span id="placement-instructions" style="display:block;color:#1976d2;">Click anywhere on the map to place</span>
+    </div>
+    <div id="zoom-panel">
+        <button id="zoom-in">Zoom In</button>
+        <button id="zoom-out">Zoom Out</button>
+    </div>
+    <audio id="bg-music" src="naval-battle-music-game.mp3" autoplay loop></audio>
+    <button onclick="document.getElementById('bg-music').play()">Play Music</button>
+    <script>
+        // --- MAP & ZOOM ---
+        let zoom = 1;
+        const mapWrapper = document.getElementById('map-wrapper');
+        const npcContainer = document.getElementById('npc-container');
+        document.getElementById('zoom-in').onclick = () => {
+            zoom = Math.min(3, zoom + 0.2);
+            mapWrapper.style.transform = `scale(${zoom})`;
+        };
+        document.getElementById('zoom-out').onclick = () => {
+            zoom = Math.max(0.15, zoom - 0.2);
+            mapWrapper.style.transform = `scale(${zoom})`;
+        };
+
+        // --- ISLANDS ---
+        const islands = [];
+        for (let i = 0; i < 16; i++) {
+            const x = Math.random() * 3700 + 100;
+            const y = Math.random() * 2700 + 100;
+            const w = 120 + Math.random() * 180;
+            const h = 90 + Math.random() * 120;
+            const r = Math.floor(Math.random() * 360);
+            const el = document.createElement('div');
+            el.className = 'island';
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            el.style.setProperty('--w', w + 'px');
+            el.style.setProperty('--h', h + 'px');
+            el.style.setProperty('--r', r + 'deg');
+            npcContainer.appendChild(el);
+            islands.push({ x, y, w, h, el });
+        }
+
+        // --- SHIPS, CANNONS ---
+        const npcs = [];
+        const cannonballs = [];
+        const cannons = [];
+        let aiPaused = false;
+        let animationFrameId = null;
+
+        // Ship stats
+        const shipStats = {
+            "japanese-ship1.png": { speed: 0.5, health: 240, damage: 25, canShoot: true, fireRate: 70, size: 40, prefersMelee: true },
+            "chinese-schip.webp": { speed: 1.5, health: 140, damage: 20, canShoot: true, fireRate: 55, size: 48, prefersMelee: true },
+            "hms-victory.webp": { speed: 0.6, health: 260, damage: 32, canShoot: true, fireRate: 70, size: 60, prefersMelee: false },
+            "victory2.jpg": { speed: 0.8, health: 200, damage: 24, canShoot: true, fireRate: 80, size: 54, prefersMelee: true },
+            "korean_ship1.png": { speed: 1.3, health :140, damage: 20, canShoot: true, fireRate: 60, size: 45, prefersMelee: true },
+            "hms.jpg": { speed: 0.7, health: 220, damage: 30, canShoot: true, fireRate: 75, size: 50, prefersMelee: false },
+            "flagship1.jpg": { speed: 0.5, health: 300, damage: 23, canShoot: true, fireRate: 84, size: 52, prefersMelee: false },
+            "song-ship.webp": { speed: 1.2, health: 180, damage: 22, canShoot: true, fireRate: 65, size: 50, prefersMelee: true },
+            "victory3.jpg": { speed: 0.9, health: 250, damage: 28, canShoot: true, fireRate: 72, size: 58, prefersMelee: false },
+            "galley.png": { speed: 2.0, health: 100, damage: 18, canShoot: true, fireRate: 68, size: 43, prefersMelee: true }
+        };
+
+        // Add chinese-ship2.webp to shipStats if not already present
+        shipStats["chinese-ship2.webp"] = { speed: 1.2, health: 160, damage: 20, canShoot: true, fireRate: 58, size: 46, prefersMelee: true };
+
+        // Placement UI
+        let placementTeam = 'asian';
+        let placementShip = 'japanese-ship1.png';
+        let placementType = 'ship';
+
+        document.getElementById('team-select').addEventListener('change', e => {
+            placementTeam = e.target.value;
+            if (placementTeam === 'victory') {
+                document.getElementById('ship-select').value = 'hms-victory.webp';
+                placementShip = 'hms-victory.webp';
+            }
+        });
+        document.getElementById('ship-select').addEventListener('change', e => {
+            placementShip = e.target.value;
+            if (
+                placementShip === 'hms-victory.webp' ||
+                placementShip === 'victory2.jpg' ||
+                placementShip === 'victory3.jpg'
+                || placementShip === 'galley.png'   
+            ) {
+                document.getElementById('team-select').value = 'victory';
+                placementTeam = 'victory';
+            } else {
+                document.getElementById('team-select').value = 'asian';
+                placementTeam = 'asian';
+            }
+        });
+        document.getElementById('place-type').addEventListener('change', e => {
+            placementType = e.target.value;
+        });
+
+        // Place stuff anywhere on the map by clicking (except on the panel)
+        mapWrapper.addEventListener('click', function(e) {
+            if (e.target.closest('#placement-panel')) return;
+            // Get map coordinates (account for zoom)
+            const rect = mapWrapper.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / zoom;
+            const y = (e.clientY - rect.top) / zoom;
+            if (placementType === 'ship') {
+                const stats = shipStats[placementShip];
+                addShip(placementShip, placementTeam, x - stats.size / 2, y - stats.size / 2);
+            } else if (placementType === 'cannon') {
+                // Only allow cannons on islands
+                let onIsland = false;
+                for (const isl of islands) {
+                    if (
+                        x > isl.x && x < isl.x + isl.w &&
+                        y > isl.y && y < isl.y + isl.h
+                    ) {
+                        onIsland = true;
+                        break;
+                    }
+                }
+                if (!onIsland) {
+                    alert("Cannons must be placed on an island!");
+                    return;
+                }
+                addCannon(x - 18, y - 18, placementTeam);
+            }
+        });
+
+        // Pause/Start AI
+        document.getElementById('pause-btn').onclick = () => {
+            aiPaused = true;
+            document.getElementById('pause-btn').style.display = 'none';
+            document.getElementById('start-btn').style.display = '';
+        };
+        document.getElementById('start-btn').onclick = () => {
+            aiPaused = false;
+            document.getElementById('pause-btn').style.display = '';
+            document.getElementById('start-btn').style.display = 'none';
+            moveNPCs();
+        };
+
+        // Add a ship with AI, team label, and formation logic
+        function addShip(imgSrc, team, x, y) {
+            const stats = shipStats[imgSrc];
+            const npc = document.createElement('div');
+            npc.className = 'npc';
+            npc.style.position = 'absolute';
+            npc.style.left = x + 'px';
+            npc.style.top = y + 'px';
+            npc.style.width = stats.size + 'px';
+            npc.style.height = stats.size + 'px';
+            npc.style.background = 'none';
+            npc.style.borderRadius = '10px';
+            // Team label
+            const teamLabel = document.createElement('div');
+            teamLabel.className = 'team-label team-' + team;
+            teamLabel.textContent = team === 'victory' ? 'Victory' : 'Asian';
+            npc.appendChild(teamLabel);
+            // Ship image and health bar
+            npc.innerHTML += `<img src="${imgSrc}" alt="NPC" style="height:100%;width:auto;display:block;margin:0 auto;">
+                <div class="health-bar" style="position:absolute;bottom:0;left:0;width:100%;height:6px;background:#222;">
+                    <div class="health-fill" style="width:100%;height:100%;background:#0f0;"></div>
+                </div>`;
+            npcContainer.appendChild(npc);
+            npc.insertBefore(teamLabel, npc.firstChild);
+            const obj = {
+                el: npc,
+                img: npc.querySelector('img'),
+                healthBar: npc.querySelector('.health-fill'),
+                position: { x, y },
+                velocity: { x: 0, y: 0 },
+                speed: stats.speed,
+                health: stats.health,
+                maxHealth: stats.health,
+                damage: stats.damage,
+                team: team,
+                alive: true,
+                imgSrc: imgSrc,
+                canShoot: stats.canShoot,
+                fireRate: stats.fireRate,
+                fireCooldown: 0,
+                target: null,
+                size: stats.size,
+                prefersMelee: stats.prefersMelee
+            };
+            npcs.push(obj);
+        }
+
+        // --- ADD CANNON FUNCTION ---
+        function addCannon(x, y, team) {
+            const cannon = document.createElement('div');
+            cannon.className = 'cannon';
+            cannon.style.left = x + 'px';
+            cannon.style.top = y + 'px';
+            // Barrel
+            const barrel = document.createElement('div');
+            barrel.className = 'cannon-barrel';
+            cannon.appendChild(barrel);
+            // Team color ring
+            cannon.style.boxShadow = team === 'victory' ? '0 0 0 3px #c62828' : '0 0 0 3px #1976d2';
+            npcContainer.appendChild(cannon);
+            cannons.push({ el: cannon, x, y, team, barrel, fireCooldown: 0 });
+        }
+
+        // --- AI & GAME LOOP HELPERS ---
+        function updateAI(npc) {
+            if (!npc.alive) return;
+            // Find nearest enemy
+            let nearest = null, minDist = 99999;
+            for (const other of npcs) {
+                if (!other.alive || other === npc || other.team === npc.team) continue;
+                const dx = other.position.x - npc.position.x;
+                const dy = other.position.y - npc.position.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = other;
+                }
+            }
+            npc.target = nearest;
+            // Face the enemy (even if not moving)
+            if (nearest && npc.img) {
+                const dx = nearest.position.x - npc.position.x;
+                // Only chinese-ship2.webp and victory2.jpg face AWAY from the enemy
+                if (npc.imgSrc === "victory2.jpg" || npc.imgSrc === "chinese-ship2.webp") {
+                    npc.img.style.transform = dx < 0 ? 'scaleX(1)' : 'scaleX(-1)';
+                } else {
+                    npc.img.style.transform = dx < 0 ? 'scaleX(-1)' : 'scaleX(1)';
+                }
+            }
+            // Move toward/away from enemy
+            if (nearest) {
+                const dx = nearest.position.x - npc.position.x;
+                const dy = nearest.position.y - npc.position.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                let moveX = 0, moveY = 0;
+                if (npc.prefersMelee && dist > npc.size + 10) {
+                    moveX = dx / dist * npc.speed;
+                    moveY = dy / dist * npc.speed;
+                } else if (npc.prefersMelee && dist <= npc.size + 10) {
+                    moveX = 0;
+                    moveY = 0;
+                } else if (!npc.prefersMelee && dist > 120) {
+                    moveX = dx / dist * npc.speed;
+                    moveY = dy / dist * npc.speed;
+                } else if (!npc.prefersMelee && dist < 80) {
+                    moveX = -dx / dist * npc.speed;
+                    moveY = -dy / dist * npc.speed;
+                }
+                npc.velocity.x = moveX;
+                npc.velocity.y = moveY;
+                // Firing logic
+                if (npc.canShoot && dist < 180 && npc.fireCooldown <= 0) {
+                    fireCannonball(npc, nearest);
+                    npc.fireCooldown = npc.fireRate + Math.random() * 20;
+                }
+                if (dist < npc.size + 10 && npc.fireCooldown <= 0) {
+                    fireAt(npc, nearest);
+                    npc.fireCooldown = npc.fireRate + Math.random() * 20;
+                }
+            } else {
+                npc.velocity.x = 0;
+                npc.velocity.y = 0;
+            }
+            if (npc.fireCooldown > 0) npc.fireCooldown--;
+        }
+
+        function fireAt(attacker, target) {
+            target.health -= attacker.damage;
+            if (target.health < 0) target.health = 0;
+            target.healthBar.style.width = (target.health / target.maxHealth * 100) + '%';
+            target.el.style.boxShadow = '0 0 10px 5px #f00';
+            setTimeout(() => target.el.style.boxShadow = '', 150);
+            if (target.health <= 0 && target.alive) {
+                target.el.style.opacity = 0.3;
+                target.alive = false;
+            }
+        }
+
+        function fireCannonball(attacker, target) {
+            const angle = Math.atan2(
+                (target.position.y + target.size / 2) - (attacker.position.y + attacker.size / 2),
+                (target.position.x + target.size / 2) - (attacker.position.x + attacker.size / 2)
+            );
+            const speed = 5;
+            const ball = document.createElement('div');
+            ball.className = 'cannonball';
+            ball.style.left = (attacker.position.x + attacker.size / 2 - 6) + 'px';
+            ball.style.top = (attacker.position.y + attacker.size / 2 - 6) + 'px';
+            npcContainer.appendChild(ball);
+            cannonballs.push({
+                el: ball,
+                x: attacker.position.x + attacker.size / 2 - 6,
+                y: attacker.position.y + attacker.size / 2 - 6,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                attacker: attacker,
+                team: attacker.team,
+                damage: attacker.damage,
+                alive: true
+            });
+        }
+
+        function handleCollisions() {
+            for (let i = 0; i < npcs.length; i++) {
+                const a = npcs[i];
+                if (!a.alive) continue;
+                for (let j = i + 1; j < npcs.length; j++) {
+                    const b = npcs[j];
+                    if (!b.alive) continue;
+                    const dx = b.position.x - a.position.x;
+                    const dy = b.position.y - a.position.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    const minDist = (a.size + b.size) / 2 - 2;
+                    if (dist < minDist && dist > 0) {
+                        const overlap = (minDist - dist) / 2;
+                        const ox = (dx / dist) * overlap;
+                        const oy = (dy / dist) * overlap;
+                        a.position.x -= ox;
+                        a.position.y -= oy;
+                        b.position.x += ox;
+                        b.position.y += oy;
+                    }
+                }
+            }
+        }
+
+        function handleShipIslandCollisions() {
+            for (const npc of npcs) {
+                if (!npc.alive) continue;
+                for (const isl of islands) {
+                    if (
+                        npc.position.x + npc.size > isl.x &&
+                        npc.position.x < isl.x + isl.w &&
+                        npc.position.y + npc.size > isl.y &&
+                        npc.position.y < isl.y + isl.h
+                    ) {
+                        const left = Math.abs(npc.position.x + npc.size - isl.x);
+                        const right = Math.abs(isl.x + isl.w - npc.position.x);
+                        const top = Math.abs(npc.position.y + npc.size - isl.y);
+                        const bottom = Math.abs(isl.y + isl.h - npc.position.y);
+                        const min = Math.min(left, right, top, bottom);
+                        if (min === left) npc.position.x = isl.x - npc.size;
+                        else if (min === right) npc.position.x = isl.x + isl.w;
+                        else if (min === top) npc.position.y = isl.y - npc.size;
+                        else if (min === bottom) npc.position.y = isl.y + isl.h;
+                    }
+                }
+            }
+        }
+
+        // --- MAIN GAME LOOP ---
+        function moveNPCs() {
+            if (aiPaused) return;
+            handleCollisions();
+            handleShipIslandCollisions();
+            for (const npc of npcs) {
+                if (npc.alive) {
+                    updateAI(npc);
+                    npc.position.x += npc.velocity.x;
+                    npc.position.y += npc.velocity.y;
+                    npc.position.x = Math.max(0, Math.min(npc.position.x, 4000 - npc.size));
+                    npc.position.y = Math.max(0, Math.min(npc.position.y, 3000 - npc.size));
+                    npc.el.style.left = npc.position.x + 'px';
+                    npc.el.style.top = npc.position.y + 'px';
+                }
+            }
+            // Update cannonball positions and check collisions
+            for (const ball of cannonballs) {
+                if (!ball.alive) continue;
+                ball.x += ball.vx;
+                ball.y += ball.vy;
+                ball.el.style.left = ball.x + 'px';
+                ball.el.style.top = ball.y + 'px';
+                for (const npc of npcs) {
+                    if (!npc.alive || npc.team === ball.team) continue;
+                    const dx = (npc.position.x + npc.size / 2) - (ball.x + 6);
+                    const dy = (npc.position.y + npc.size / 2) - (ball.y + 6);
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < npc.size / 2) {
+                        npc.health -= ball.damage;
+                        if (npc.health < 0) npc.health = 0;
+                        npc.healthBar.style.width = (npc.health / npc.maxHealth * 100) + '%';
+                        npc.el.style.boxShadow = '0 0 10px 5px #f00';
+                        setTimeout(() => npc.el.style.boxShadow = '', 150);
+                        if (npc.health <= 0 && npc.alive) {
+                            npc.el.style.opacity = 0.3;
+                            npc.alive = false;
+                        }
+                        ball.alive = false;
+                        ball.el.remove();
+                        break;
+                    }
+                }
+                if (ball.x < -20 || ball.x > 4020 || ball.y < -20 || ball.y > 3020) {
+                    ball.alive = false;
+                    ball.el.remove();
+                }
+            }
+            // Cannons auto-fire at nearest enemy ship in range
+            for (const cannon of cannons) {
+                if (cannon.fireCooldown > 0) { cannon.fireCooldown--; continue; }
+                let nearest = null, minDist = 99999;
+                for (const npc of npcs) {
+                    if (!npc.alive || npc.team === cannon.team) continue;
+                    const dx = (npc.position.x + npc.size / 2) - (cannon.x + 18);
+                    const dy = (npc.position.y + npc.size / 2) - (cannon.y + 18);
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearest = npc;
+                    }
+                }
+                if (nearest && minDist < 400) {
+                    // Rotate barrel
+                    const angle = Math.atan2(
+                        (nearest.position.y + nearest.size / 2) - (cannon.y + 18),
+                        (nearest.position.x + nearest.size / 2) - (cannon.x + 18)
+                    );
+                    cannon.barrel.style.transform = `rotate(${angle * 180 / Math.PI}deg)`;
+                    // Fire
+                    const ball = document.createElement('div');
+                    ball.className = 'cannonball';
+                    ball.style.left = (cannon.x + 18 - 6) + 'px';
+                    ball.style.top = (cannon.y + 18 - 6) + 'px';
+                    npcContainer.appendChild(ball);
+                    cannonballs.push({
+                        el: ball,
+                        x: cannon.x + 18 - 6,
+                        y: cannon.y + 18 - 6,
+                        vx: Math.cos(angle) * 7,
+                        vy: Math.sin(angle) * 7,
+                        attacker: null,
+                        team: cannon.team,
+                        damage: 20,
+                        alive: true
+                    });
+                    cannon.fireCooldown = 50 + Math.random() * 30;
+                }
+            }
+            animationFrameId = requestAnimationFrame(moveNPCs);
+        }
+
+        // --- INITIAL TEST SHIPS ---
+        addShip('japanese-ship1.png', 'asian', 100, 100);
+        addShip('chinese-schip.webp', 'asian', 200, 150);
+        addShip('hms-victory.webp', 'victory', 300, 200);
+        addShip('japanese-ship1.png', 'victory', 400, 250);
+        addShip('victory2.jpg', 'victory', 400, 250);
+        addShip('chinese-ship2.webp', 'asian', 600, 350); // <-- Added to team 'asian'
+
+        moveNPCs();
+
+        // Update updateAI to make ONLY chinese-ship2.webp and victory2.jpg face AWAY from hostile NPCs
+        function updateAI(npc) {
+            if (!npc.alive) return;
+            // Find nearest enemy
+            let nearest = null, minDist = 99999;
+            for (const other of npcs) {
+                if (!other.alive || other === npc || other.team === npc.team) continue;
+                const dx = other.position.x - npc.position.x;
+                const dy = other.position.y - npc.position.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = other;
+                }
+            }
+            npc.target = nearest;
+            // Face the enemy (even if not moving)
+            if (nearest && npc.img) {
+                const dx = nearest.position.x - npc.position.x;
+                // Only chinese-ship2.webp and victory2.jpg face AWAY from the enemy
+                if (npc.imgSrc === "victory2.jpg" || npc.imgSrc === "chinese-ship2.webp"|| npc.imgSrc === "flagship1.jpg") {
+                    npc.img.style.transform = dx < 0 ? 'scaleX(1)' : 'scaleX(-1)';
+                } else {
+                    npc.img.style.transform = dx < 0 ? 'scaleX(-1)' : 'scaleX(1)';
+                }
+            }
+            // Move toward/away from enemy
+            if (nearest) {
+                const dx = nearest.position.x - npc.position.x;
+                const dy = nearest.position.y - npc.position.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                let moveX = 0, moveY = 0;
+                if (npc.prefersMelee && dist > npc.size + 10) {
+                    moveX = dx / dist * npc.speed;
+                    moveY = dy / dist * npc.speed;
+                } else if (npc.prefersMelee && dist <= npc.size + 10) {
+                    moveX = 0;
+                    moveY = 0;
+                } else if (!npc.prefersMelee && dist > 120) {
+                    moveX = dx / dist * npc.speed;
+                    moveY = dy / dist * npc.speed;
+                } else if (!npc.prefersMelee && dist < 80) {
+                    moveX = -dx / dist * npc.speed;
+                    moveY = -dy / dist * npc.speed;
+                }
+                npc.velocity.x = moveX;
+                npc.velocity.y = moveY;
+                // Firing logic
+                if (npc.canShoot && dist < 180 && npc.fireCooldown <= 0) {
+                    fireCannonball(npc, nearest);
+                    npc.fireCooldown = npc.fireRate + Math.random() * 20;
+                }
+                if (dist < npc.size + 10 && npc.fireCooldown <= 0) {
+                    fireAt(npc, nearest);
+                    npc.fireCooldown = npc.fireRate + Math.random() * 20;
+                }
+            } else {
+                npc.velocity.x = 0;
+                npc.velocity.y = 0;
+            }
+            if (npc.fireCooldown > 0) npc.fireCooldown--;
+        }
+    </script>
+</body>
+</html>
