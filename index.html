@@ -142,6 +142,10 @@
             pointer-events: none;
         }
     </style>
+
+    <link rel="stylesheet" href="./manifest.json">
+    <link rel="manifest" href="./manifest.json">
+
 </head>
 <body>
     <div id="map-wrapper">
@@ -691,5 +695,6 @@
             if (npc.fireCooldown > 0) npc.fireCooldown--;
         }
     </script>
+    <script src="./sw.js"></script>
 </body>
 </html>
